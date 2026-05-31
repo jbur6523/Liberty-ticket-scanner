@@ -1,0 +1,328 @@
+:root {
+  color: #f7f3e8;
+  background: #050505;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(212, 175, 55, 0.18), transparent 34rem),
+    linear-gradient(160deg, #050505 0%, #14110a 54%, #050505 100%);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  border: 1px solid rgba(212, 175, 55, 0.45);
+  border-radius: 8px;
+  background: #18140b;
+  color: #fff8df;
+  min-height: 46px;
+  padding: 0.7rem 1rem;
+  font-weight: 800;
+}
+
+button.primary {
+  background: #d4af37;
+  color: #070707;
+}
+
+button.danger {
+  border-color: #e34f4f;
+  color: #ffd8d8;
+}
+
+input,
+select {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 8px;
+  background: #0d0d0d;
+  color: #fff;
+  padding: 0.8rem;
+}
+
+label {
+  display: grid;
+  gap: 0.45rem;
+  color: #f1d783;
+  font-weight: 800;
+}
+
+.app-shell {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.hero {
+  padding: 1.4rem 0 1rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  color: #d4af37;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 0.45rem;
+  font-size: clamp(2rem, 9vw, 4.5rem);
+  line-height: 0.95;
+}
+
+.hero p:last-child,
+.muted,
+.note {
+  color: #cfc6ad;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.4rem;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 0.45rem 0;
+  background: rgba(5, 5, 5, 0.92);
+  backdrop-filter: blur(12px);
+}
+
+.tabs button {
+  min-height: 40px;
+  padding: 0.45rem 0.25rem;
+  font-size: 0.78rem;
+  text-transform: capitalize;
+}
+
+.tabs button.active {
+  background: #d4af37;
+  color: #070707;
+}
+
+.status-bar,
+.warning-bar,
+.warning-card {
+  border-radius: 8px;
+  padding: 0.85rem;
+  margin: 0.7rem 0;
+  font-weight: 800;
+}
+
+.status-bar {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.status-bar.failed,
+.warning-bar,
+.warning-card {
+  border: 1px solid #f1b347;
+  background: rgba(241, 179, 71, 0.14);
+}
+
+.panel {
+  border: 1px solid rgba(212, 175, 55, 0.22);
+  border-radius: 8px;
+  background: rgba(7, 7, 7, 0.86);
+  padding: 1rem;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+}
+
+.form-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.65rem;
+}
+
+.stat-card {
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  border-radius: 8px;
+  padding: 1rem;
+  background: #101010;
+}
+
+.stat-card span,
+.ticket-card span,
+.source-row span {
+  color: #cfc6ad;
+}
+
+.stat-card strong {
+  display: block;
+  margin-top: 0.35rem;
+  color: #d4af37;
+  font-size: 2rem;
+}
+
+.section-title {
+  margin-top: 1.35rem;
+}
+
+.source-list,
+.ticket-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.source-row,
+.ticket-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.7rem;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: #0d0d0d;
+  padding: 0.8rem;
+}
+
+.ticket-card div:first-child {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.ticket-card button {
+  grid-column: 1 / -1;
+}
+
+.pill {
+  border-radius: 999px;
+  padding: 0.35rem 0.6rem;
+  background: #1f1f1f;
+  color: #fff;
+  font-weight: 900;
+}
+
+.pill.checked {
+  background: #1f7a3a;
+}
+
+.button-row,
+.filter-row,
+.manual-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.event-list {
+  display: grid;
+  gap: 0.45rem;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.check-row {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.75rem;
+  color: #fff;
+}
+
+.check-row input {
+  width: 22px;
+  min-height: 22px;
+}
+
+.scanner-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.scan-toggle {
+  min-height: 58px;
+  font-size: 1.1rem;
+}
+
+.qr-reader {
+  overflow: hidden;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+}
+
+.scan-result {
+  display: grid;
+  gap: 0.45rem;
+  border-radius: 8px;
+  padding: 1.25rem;
+  text-align: center;
+  min-height: 220px;
+  align-content: center;
+}
+
+.scan-result h2 {
+  margin: 0;
+  font-size: clamp(2rem, 11vw, 4rem);
+}
+
+.scan-result p {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 900;
+}
+
+.scan-result.valid {
+  background: #0f6b32;
+}
+
+.scan-result.already {
+  background: #9a1f1f;
+}
+
+.scan-result.not-found {
+  background: #2b2b2b;
+  border: 2px solid #f1b347;
+}
+
+@media (min-width: 760px) {
+  .app-shell {
+    padding: 2rem;
+  }
+
+  .tabs button {
+    font-size: 0.95rem;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .ticket-card {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .ticket-card button {
+    grid-column: auto;
+  }
+}
