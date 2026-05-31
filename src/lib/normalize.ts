@@ -36,6 +36,8 @@ export function collectIdentifiers(fields: Record<string, unknown>): string[] {
     "id",
     "ticketId",
     "ticket_id",
+    "issuedTicketId",
+    "issued_ticket_id",
     "ticketCode",
     "ticket_code",
     "Ticket Code",
@@ -53,6 +55,13 @@ export function collectIdentifiers(fields: Record<string, unknown>): string[] {
     "Code",
     "qr_code",
     "qrCode",
+    "qr",
+    "qr_value",
+    "qrcode",
+    "url",
+    "ticket_url",
+    "download_url",
+    "pdf_url",
   ];
 
   const identifiers = new Set<string>();

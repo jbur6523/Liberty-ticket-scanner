@@ -26,6 +26,7 @@ export default function App() {
   const [ticketFilter, setTicketFilter] = useState<"all" | "checked" | "open">("all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const dataRef = useRef(data);
 
   useEffect(() => {
     const saved = loadData();
@@ -35,6 +36,7 @@ export default function App() {
 
   useEffect(() => {
     saveData(data);
+    dataRef.current = data;
   }, [data]);
 
   useEffect(() => {
@@ -86,13 +88,19 @@ export default function App() {
     if (!key) return updateStatus("failed", "Enter your Ticket Tailor API key first.");
     updateStatus("syncing", "Loading Ticket Tailor events...");
     try {
-      const events = await fetchEvents(key);
+      const { events, summary } = await fetchEvents(key);
       persist({
         ...data,
         apiKey: key,
         events,
         selectedEventIds: events.map((event) => event.id),
-        syncStatus: { state: "success", message: `Loaded ${events.length} events.`, newTickets: 0, updatedTickets: 0 },
+        eventFilterSummary: summary,
+        syncStatus: {
+          state: "success",
+          message: `Loaded ${events.length} events in the 15-day event window. ${summary.hiddenOutsideDateRange} older/future events hidden.`,
+          newTickets: 0,
+          updatedTickets: 0,
+        },
       });
     } catch (error) {
       updateStatus("failed", `Could not load events. ${String(error)}`);
@@ -109,7 +117,7 @@ export default function App() {
     }));
 
     try {
-      const incoming = await fetchIssuedTickets(key, data.events, data.selectedEventIds);
+      const { tickets: incoming, report } = await fetchIssuedTickets(key, data.events, data.selectedEventIds);
       setData((current) => {
         const merged = mergeTickets(current.tickets, incoming);
         return {
@@ -118,11 +126,12 @@ export default function App() {
           tickets: merged.tickets,
           syncStatus: {
             state: "success",
-            message: `Sync complete. ${merged.newTickets} new, ${merged.updatedTickets} updated.`,
+            message: `Sync complete. ${report.ticketApiCallsMade} API calls, ${report.totalTicketsReturned} tickets returned, ${merged.newTickets} new, ${merged.updatedTickets} updated.`,
             lastSuccessfulSync: new Date().toISOString(),
             newTickets: merged.newTickets,
             updatedTickets: merged.updatedTickets,
           },
+          lastSyncReport: report,
         };
       });
     } catch (error) {
@@ -134,6 +143,14 @@ export default function App() {
           message: `Sync failed. Keep scanning with local tickets. ${String(error)}`,
           newTickets: 0,
           updatedTickets: 0,
+        },
+        lastSyncReport: {
+          eventsFound: current.events.length,
+          selectedEvents: current.selectedEventIds.length,
+          ticketApiCallsMade: 0,
+          totalTicketsReturned: 0,
+          perEvent: [],
+          errors: [String(error)],
         },
       }));
     }
@@ -150,11 +167,12 @@ export default function App() {
   }
 
   const handleScan = useCallback((code: string) => {
-    const { tickets, result } = scanTicket(data.tickets, code);
-    const recentScans = result.status === "not_found" ? data.recentScans : [result.ticket, ...data.recentScans].slice(0, 10);
-    persist({ ...data, tickets, recentScans });
+    const current = dataRef.current;
+    const { tickets, result } = scanTicket(current.tickets, code);
+    const recentScans = result.status === "not_found" ? current.recentScans : [result.ticket, ...current.recentScans].slice(0, 10);
+    setData({ ...current, tickets, recentScans });
     setScanResult(result);
-  }, [data]);
+  }, []);
 
   async function importCsv(files: FileList | null) {
     if (!files?.length) return;
@@ -257,6 +275,20 @@ export default function App() {
               Version 1 stores this key in your browser if you sync tickets. Frontend-held API keys are not fully secure. For production,
               use Vercel environment variables with the included API proxy.
             </p>
+            <p className="note">
+              Event list is filtered to Ticket Tailor events from 15 days in the past through 15 days in the future. Older events are hidden.
+            </p>
+            {data.eventFilterSummary && (
+              <div className="mini-report">
+                <strong>Event filter</strong>
+                <span>
+                  Showing events from {new Date(data.eventFilterSummary.fromDate).toLocaleDateString()} to{" "}
+                  {new Date(data.eventFilterSummary.toDate).toLocaleDateString()}.
+                </span>
+                <span>{data.eventFilterSummary.eventsInDateRange} shown from {data.eventFilterSummary.totalEventsFound} total events found.</span>
+                <span>{data.eventFilterSummary.hiddenOutsideDateRange} events outside the date window hidden.</span>
+              </div>
+            )}
             <div className="button-row">
               <button className="primary" onClick={loadEvents}>Load Events</button>
               <button onClick={() => syncTickets()}>Sync Now</button>
@@ -283,10 +315,11 @@ export default function App() {
               {data.events.map((event) => (
                 <label className="check-row" key={event.id}>
                   <input type="checkbox" checked={data.selectedEventIds.includes(event.id)} onChange={() => toggleEvent(event)} />
-                  <span>{event.name}</span>
+                  <span>{event.name}{event.startDate ? ` - ${event.startDate}` : ""}</span>
                 </label>
               ))}
             </div>
+            {data.lastSyncReport && <SyncReportPanel report={data.lastSyncReport} />}
 
             <div className="section-title">
               <h2>CSV Backup Import</h2>
@@ -361,19 +394,44 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
+type CameraDevice = {
+  id: string;
+  label: string;
+};
+
 function CameraScanner({ onScan }: { onScan: (code: string) => void }) {
-  const scannerRef = useRef<{ clear: () => Promise<void> } | null>(null);
+  const scannerRef = useRef<{ clear: () => void | Promise<void> } | null>(null);
   const lastScanRef = useRef<{ code: string; at: number }>({ code: "", at: 0 });
+  const [cameras, setCameras] = useState<CameraDevice[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState("");
+  const [cameraMessage, setCameraMessage] = useState("Requesting rear camera...");
 
   useEffect(() => {
     let isMounted = true;
 
     async function startScanner() {
-      const { Html5QrcodeScanner } = await import("html5-qrcode");
+      const { Html5Qrcode } = await import("html5-qrcode");
       if (!isMounted) return;
 
-      const scanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: { width: 260, height: 260 } }, false);
-      scanner.render(
+      const available = await Html5Qrcode.getCameras().catch(() => []);
+      if (!isMounted) return;
+
+      const mapped = available.map((camera) => ({ id: camera.id, label: camera.label || "Camera" }));
+      setCameras(mapped);
+
+      const rearCamera = mapped.find((camera) => /back|rear|environment|wide|world/i.test(camera.label));
+      const cameraId = selectedCameraId || rearCamera?.id || mapped[0]?.id || "";
+      if (cameraId) setSelectedCameraId(cameraId);
+
+      const scanner = new Html5Qrcode("qr-reader");
+      const cameraConfig = cameraId ? { deviceId: { exact: cameraId } } : { facingMode: { ideal: "environment" } };
+
+      await scanner.start(
+        cameraConfig,
+        {
+          fps: 10,
+          qrbox: { width: 260, height: 260 },
+        },
         (decodedText) => {
           const now = Date.now();
           const normalized = decodedText.trim();
@@ -384,17 +442,55 @@ function CameraScanner({ onScan }: { onScan: (code: string) => void }) {
         () => undefined
       );
       scannerRef.current = scanner;
+      setCameraMessage(cameraId ? "Camera ready. Rear camera is preferred when available." : "Camera ready.");
     }
 
-    startScanner();
+    startScanner().catch((error) => {
+      setCameraMessage(`Camera could not start. Check browser permission. ${String(error)}`);
+    });
 
     return () => {
       isMounted = false;
-      scannerRef.current?.clear().catch(() => undefined);
+      Promise.resolve(scannerRef.current?.clear()).catch(() => undefined);
     };
-  }, [onScan]);
+  }, [onScan, selectedCameraId]);
 
-  return <div id="qr-reader" className="qr-reader" />;
+  return (
+    <div className="camera-stack">
+      <div className="camera-controls">
+        <span>{cameraMessage}</span>
+        {cameras.length > 1 && (
+          <select value={selectedCameraId} onChange={(event) => setSelectedCameraId(event.target.value)}>
+            {cameras.map((camera) => (
+              <option value={camera.id} key={camera.id}>{camera.label}</option>
+            ))}
+          </select>
+        )}
+      </div>
+      <div id="qr-reader" className="qr-reader" />
+    </div>
+  );
+}
+
+function SyncReportPanel({ report }: { report: NonNullable<AppData["lastSyncReport"]> }) {
+  return (
+    <div className="mini-report">
+      <strong>Last sync details</strong>
+      <span>Events found: {report.eventsFound}</span>
+      <span>Selected events: {report.selectedEvents}</span>
+      <span>Ticket API calls made: {report.ticketApiCallsMade}</span>
+      <span>Total tickets loaded: {report.totalTicketsReturned}</span>
+      {report.selectedEvents > 0 && report.totalTicketsReturned === 0 && (
+        <span>No tickets came back from the issued-ticket API. Import Ticket Tailor door-list CSVs as the backup source.</span>
+      )}
+      {report.perEvent.map((event) => (
+        <span key={event.eventId}>
+          {event.eventName}: {event.ticketsReturned} tickets, {event.callsMade} calls{event.error ? `, error: ${event.error}` : ""}
+        </span>
+      ))}
+      {report.errors.length > 0 && <span>Errors: {report.errors.join(" | ")}</span>}
+    </div>
+  );
 }
 
 function ScanResultPanel({ result }: { result: ScanResult }) {

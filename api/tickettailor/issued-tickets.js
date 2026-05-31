@@ -13,12 +13,7 @@ export default async function handler(request, response) {
   url.searchParams.set("per_page", "100");
 
   try {
-    const upstream = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        Authorization: `Basic ${Buffer.from(`${apiKey}:`).toString("base64")}`,
-      },
-    });
+    const upstream = await ticketTailorFetch(url, apiKey);
 
     const body = await upstream.text();
     response
@@ -29,4 +24,22 @@ export default async function handler(request, response) {
   } catch (error) {
     response.status(502).json({ error: `Ticket Tailor request failed: ${String(error)}` });
   }
+}
+
+async function ticketTailorFetch(url, apiKey) {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Basic ${Buffer.from(apiKey).toString("base64")}`,
+    },
+  });
+
+  if (response.status !== 401) return response;
+
+  return fetch(url, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Basic ${Buffer.from(`${apiKey}:`).toString("base64")}`,
+    },
+  });
 }

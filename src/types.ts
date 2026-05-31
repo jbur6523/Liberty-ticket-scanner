@@ -30,6 +30,32 @@ export type EventOption = {
   id: string;
   name: string;
   startDate?: string;
+  rawDate?: string;
+};
+
+export type EventFilterSummary = {
+  totalEventsFound: number;
+  eventsInDateRange: number;
+  hiddenOutsideDateRange: number;
+  fromDate: string;
+  toDate: string;
+};
+
+export type SyncEventReport = {
+  eventId: string;
+  eventName: string;
+  callsMade: number;
+  ticketsReturned: number;
+  error?: string;
+};
+
+export type SyncReport = {
+  eventsFound: number;
+  selectedEvents: number;
+  ticketApiCallsMade: number;
+  totalTicketsReturned: number;
+  perEvent: SyncEventReport[];
+  errors: string[];
 };
 
 export type ScanResult =
@@ -55,4 +81,6 @@ export type AppData = {
   autoSyncMinutes: AutoSyncInterval;
   syncStatus: SyncStatus;
   apiKey?: string;
+  eventFilterSummary?: EventFilterSummary;
+  lastSyncReport?: SyncReport;
 };
