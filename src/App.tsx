@@ -1,5 +1,4 @@
-import { Html5QrcodeScanner } from "html5-qrcode";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppData, AutoSyncInterval, EventOption, ScanResult, Ticket } from "./types";
 import { parseCsvFiles } from "./lib/csv";
 import { exportTickets } from "./lib/exportCsv";
@@ -150,12 +149,12 @@ export default function App() {
     persist({ ...data, selectedEventIds: [...selected] });
   }
 
-  function handleScan(code: string) {
+  const handleScan = useCallback((code: string) => {
     const { tickets, result } = scanTicket(data.tickets, code);
     const recentScans = result.status === "not_found" ? data.recentScans : [result.ticket, ...data.recentScans].slice(0, 10);
     persist({ ...data, tickets, recentScans });
     setScanResult(result);
-  }
+  }, [data]);
 
   async function importCsv(files: FileList | null) {
     if (!files?.length) return;
@@ -363,16 +362,34 @@ function Stat({ label, value }: { label: string; value: number }) {
 }
 
 function CameraScanner({ onScan }: { onScan: (code: string) => void }) {
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const scannerRef = useRef<{ clear: () => Promise<void> } | null>(null);
+  const lastScanRef = useRef<{ code: string; at: number }>({ code: "", at: 0 });
 
   useEffect(() => {
-    const scanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: { width: 260, height: 260 } }, false);
-    scanner.render(
-      (decodedText) => onScan(decodedText),
-      () => undefined
-    );
-    scannerRef.current = scanner;
+    let isMounted = true;
+
+    async function startScanner() {
+      const { Html5QrcodeScanner } = await import("html5-qrcode");
+      if (!isMounted) return;
+
+      const scanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: { width: 260, height: 260 } }, false);
+      scanner.render(
+        (decodedText) => {
+          const now = Date.now();
+          const normalized = decodedText.trim();
+          if (lastScanRef.current.code === normalized && now - lastScanRef.current.at < 2000) return;
+          lastScanRef.current = { code: normalized, at: now };
+          onScan(decodedText);
+        },
+        () => undefined
+      );
+      scannerRef.current = scanner;
+    }
+
+    startScanner();
+
     return () => {
+      isMounted = false;
       scannerRef.current?.clear().catch(() => undefined);
     };
   }, [onScan]);
