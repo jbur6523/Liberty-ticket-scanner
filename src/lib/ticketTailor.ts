@@ -1,10 +1,9 @@
 import type { EventFilterSummary, EventOption, SyncReport, Ticket } from "../types";
+import { eventDateWindow, formatDateForDisplay, isEventIncluded } from "./eventFilters";
 import { collectIdentifiers } from "./normalize";
 
 type ApiEvent = Record<string, unknown>;
 type ApiTicket = Record<string, unknown>;
-
-export const EVENT_WINDOW_DAYS = 15;
 
 const proxyFetch = async (path: string, apiKey: string) => {
   const response = await fetch(`/api/tickettailor/${path}`, {
@@ -20,9 +19,13 @@ const nestedText = (value: unknown, key: string) => {
   return asText((value as Record<string, unknown>)[key]);
 };
 
-export async function fetchEvents(apiKey: string): Promise<{ events: EventOption[]; summary: EventFilterSummary }> {
-  const rows = await fetchAllPages<ApiEvent>("events", apiKey);
-  const allEvents = rows
+export async function fetchEvents(
+  apiKey: string,
+  includeName: string,
+  excludeName: string
+): Promise<{ events: EventOption[]; summary: EventFilterSummary }> {
+  const rows = await fetchEventPages<ApiEvent>(apiKey);
+  const mappedEvents = rows
     .map((event) => {
       const rawDate = getEventDateValue(event);
       return {
@@ -34,17 +37,38 @@ export async function fetchEvents(apiKey: string): Promise<{ events: EventOption
     })
     .filter((event) => event.id);
 
+  const duplicateIds = new Set<string>();
+  const eventsById = new Map<string, EventOption>();
+  for (const event of mappedEvents) {
+    if (eventsById.has(event.id)) duplicateIds.add(event.id);
+    eventsById.set(event.id, { ...eventsById.get(event.id), ...event });
+  }
+
+  const dedupedEvents = [...eventsById.values()];
+  const events = dedupedEvents.filter((event) => isEventIncluded(event, includeName, excludeName));
   const window = eventDateWindow();
-  const events = allEvents.filter((event) => isEventInWindow(event.rawDate, window.from, window.to));
+  const excludedByDate = dedupedEvents.filter((event) => {
+    const date = parseDateForFilter(event.rawDate);
+    return !date || date < window.from || date > window.to;
+  }).length;
+  const excludedByName = dedupedEvents.length - excludedByDate - events.length;
 
   return {
     events,
     summary: {
-      totalEventsFound: allEvents.length,
+      endpoint: "/v1/events",
+      rawEventsReturned: mappedEvents.length,
+      totalEventsFound: mappedEvents.length,
+      deduplicatedEventCount: dedupedEvents.length,
       eventsInDateRange: events.length,
-      hiddenOutsideDateRange: allEvents.length - events.length,
+      hiddenOutsideDateRange: excludedByDate,
+      excludedByName: Math.max(0, excludedByName),
       fromDate: window.from.toISOString(),
       toDate: window.to.toISOString(),
+      firstTenEvents: dedupedEvents.slice(0, 10).map((event) => ({ id: event.id, name: event.name })),
+      duplicateEventIdsFound: duplicateIds.size > 0,
+      duplicateEventIds: [...duplicateIds],
+      unexpectedlyHighEventCount: dedupedEvents.length > 100,
     },
   };
 }
@@ -140,6 +164,7 @@ function apiTicketToTicket(row: ApiTicket, event?: EventOption): Ticket {
     email: asText(row.email || row.attendee_email),
     eventId: event?.id || asText(row.event_id),
     eventName: event?.name || asText(row.event_name || row.event),
+    eventDate: event?.rawDate || asText(row.event_date || row.event_start || row.starts_at),
     fighter: asText(row.fighter),
     sourceName: event?.name || asText(row.source || row.event_name),
     ticketType: asText(row.ticket_type || row.ticket_type_name || row.type),
@@ -151,19 +176,21 @@ function apiTicketToTicket(row: ApiTicket, event?: EventOption): Ticket {
   };
 }
 
-async function fetchAllPages<T>(path: string, apiKey: string): Promise<T[]> {
+async function fetchEventPages<T>(apiKey: string): Promise<T[]> {
   const rows: T[] = [];
   let page = 1;
   let hasMore = true;
+  const fetchedPages = new Set<number>();
 
   while (hasMore) {
-    const joiner = path.includes("?") ? "&" : "?";
-    const payload = await proxyFetch(`${path}${joiner}page=${page}`, apiKey);
+    if (fetchedPages.has(page) || page > 10) break;
+    fetchedPages.add(page);
+
+    const payload = await proxyFetch(`events?page=${page}`, apiKey);
     const pageRows = extractRows(payload) as T[];
     rows.push(...pageRows);
-    hasMore = hasNextPage(payload, pageRows);
+    hasMore = hasExplicitNextPage(payload);
     page += 1;
-    if (page > 100) hasMore = false;
   }
 
   return rows;
@@ -192,6 +219,18 @@ function hasNextPage(payload: unknown, rows: unknown[]) {
   );
 }
 
+function hasExplicitNextPage(payload: unknown) {
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, unknown>;
+  const links = record.links as Record<string, unknown> | undefined;
+  const meta = record.meta as Record<string, unknown> | undefined;
+  return Boolean(
+    links?.next ||
+      meta?.next ||
+      (typeof meta?.current_page === "number" && typeof meta?.last_page === "number" && meta.current_page < meta.last_page)
+  );
+}
+
 function getEventDateValue(event: ApiEvent) {
   return (
     nestedText(event.start, "date") ||
@@ -209,36 +248,12 @@ function getEventDateValue(event: ApiEvent) {
   );
 }
 
-function eventDateWindow() {
-  const now = new Date();
-  const from = new Date(now);
-  from.setDate(now.getDate() - EVENT_WINDOW_DAYS);
-  from.setHours(0, 0, 0, 0);
-
-  const to = new Date(now);
-  to.setDate(now.getDate() + EVENT_WINDOW_DAYS);
-  to.setHours(23, 59, 59, 999);
-
-  return { from, to };
-}
-
-function isEventInWindow(value: string | undefined, from: Date, to: Date) {
-  if (!value) return false;
-  const date = parseEventDate(value);
-  if (!date) return false;
-  return date >= from && date <= to;
-}
-
-function parseEventDate(value: string) {
+function parseDateForFilter(value: string | undefined) {
+  if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
   const hasTimezone = /z$|[+-]\d{2}:?\d{2}$/i.test(trimmed);
   const date = new Date(hasTimezone ? trimmed : trimmed.replace(" ", "T"));
   if (Number.isNaN(date.getTime())) return null;
   return date;
-}
-
-function formatDateForDisplay(value: string) {
-  const date = parseEventDate(value);
-  return date ? date.toLocaleString() : value;
 }

@@ -5,6 +5,7 @@ import { exportTickets } from "./lib/exportCsv";
 import { scanTicket, ticketSearchText } from "./lib/scanner";
 import { defaultData, loadData, mergeTickets, saveData } from "./lib/storage";
 import { fetchEvents, fetchIssuedTickets } from "./lib/ticketTailor";
+import { buildCleanupPreview, isTicketIncluded } from "./lib/eventFilters";
 
 type View = "dashboard" | "setup" | "scan" | "tickets" | "export";
 
@@ -28,6 +29,11 @@ export default function App() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const dataRef = useRef(data);
 
+  const activeTickets = useMemo(
+    () => data.tickets.filter((ticket) => isTicketIncluded(ticket, data.includeEventNameContains, data.excludeEventNameContains)),
+    [data.tickets, data.includeEventNameContains, data.excludeEventNameContains]
+  );
+
   useEffect(() => {
     const saved = loadData();
     setData(saved);
@@ -48,30 +54,30 @@ export default function App() {
   }, [data.autoSyncMinutes, data.apiKey, data.selectedEventIds.join(","), data.events.length]);
 
   const stats = useMemo(() => {
-    const checked = data.tickets.filter((ticket) => ticket.checkedIn).length;
+    const checked = activeTickets.filter((ticket) => ticket.checkedIn).length;
     const sources = new Map<string, { total: number; checked: number }>();
-    for (const ticket of data.tickets) {
+    for (const ticket of activeTickets) {
       const key = ticket.sourceName || ticket.fighter || ticket.eventName || "Unknown source";
       const current = sources.get(key) || { total: 0, checked: 0 };
       sources.set(key, { total: current.total + 1, checked: current.checked + (ticket.checkedIn ? 1 : 0) });
     }
     return {
       events: sources.size,
-      total: data.tickets.length,
+      total: activeTickets.length,
       checked,
-      remaining: data.tickets.length - checked,
+      remaining: activeTickets.length - checked,
       sources: [...sources.entries()].sort((a, b) => a[0].localeCompare(b[0])),
     };
-  }, [data.tickets]);
+  }, [activeTickets]);
 
   const oldSyncWarning = useMemo(() => {
-    if (!data.syncStatus.lastSuccessfulSync) return data.tickets.length > 0 ? "No successful API sync yet. Local CSV/imported data is still available." : "";
+    if (!data.syncStatus.lastSuccessfulSync) return activeTickets.length > 0 ? "No successful API sync yet. Local CSV/imported data is still available." : "";
     const ageMs = Date.now() - new Date(data.syncStatus.lastSuccessfulSync).getTime();
     return ageMs > 10 * 60 * 1000 ? "Last sync was over 10 minutes ago. Ticket list may be outdated." : "";
-  }, [data.syncStatus.lastSuccessfulSync, data.tickets.length]);
+  }, [data.syncStatus.lastSuccessfulSync, activeTickets.length]);
 
   const filteredTickets = useMemo(() => {
-    return data.tickets.filter((ticket) => {
+    return activeTickets.filter((ticket) => {
       const matchesQuery = !ticketQuery || ticketSearchText(ticket).includes(ticketQuery.toLowerCase());
       const matchesChecked =
         ticketFilter === "all" || (ticketFilter === "checked" && ticket.checkedIn) || (ticketFilter === "open" && !ticket.checkedIn);
@@ -79,7 +85,7 @@ export default function App() {
       const matchesSource = sourceFilter === "all" || source === sourceFilter;
       return matchesQuery && matchesChecked && matchesSource;
     });
-  }, [data.tickets, ticketQuery, ticketFilter, sourceFilter]);
+  }, [activeTickets, ticketQuery, ticketFilter, sourceFilter]);
 
   const persist = (next: AppData) => setData(next);
 
@@ -88,16 +94,18 @@ export default function App() {
     if (!key) return updateStatus("failed", "Enter your Ticket Tailor API key first.");
     updateStatus("syncing", "Loading Ticket Tailor events...");
     try {
-      const { events, summary } = await fetchEvents(key);
+      const { events, summary } = await fetchEvents(key, data.includeEventNameContains, data.excludeEventNameContains);
       persist({
         ...data,
         apiKey: key,
         events,
-        selectedEventIds: events.map((event) => event.id),
+        selectedEventIds: summary.unexpectedlyHighEventCount ? [] : events.map((event) => event.id),
         eventFilterSummary: summary,
         syncStatus: {
-          state: "success",
-          message: `Loaded ${events.length} events in the 15-day event window. ${summary.hiddenOutsideDateRange} older/future events hidden.`,
+          state: summary.unexpectedlyHighEventCount ? "failed" : "success",
+          message: summary.unexpectedlyHighEventCount
+            ? "Unexpectedly high event count. Check API parsing/pagination. Sync is blocked."
+            : `Loaded ${events.length} Liberty Fight League events in the 15-day event window. ${summary.hiddenOutsideDateRange} date-excluded and ${summary.excludedByName} name-excluded events hidden.`,
           newTickets: 0,
           updatedTickets: 0,
         },
@@ -109,6 +117,9 @@ export default function App() {
 
   async function syncTickets(key = data.apiKey || apiKeyInput.trim()) {
     if (!key) return updateStatus("failed", "Enter your Ticket Tailor API key first.");
+    if (data.eventFilterSummary?.unexpectedlyHighEventCount) {
+      return updateStatus("failed", "Unexpectedly high event count. Check API parsing/pagination before syncing.");
+    }
     if (data.selectedEventIds.length === 0) return updateStatus("failed", "Select at least one event before syncing.");
     setData((current) => ({
       ...current,
@@ -117,7 +128,12 @@ export default function App() {
     }));
 
     try {
-      const { tickets: incoming, report } = await fetchIssuedTickets(key, data.events, data.selectedEventIds);
+      const allowedEventIds = new Set(data.events.map((event) => event.id));
+      const selectedEventIds = data.selectedEventIds.filter((eventId) => allowedEventIds.has(eventId));
+      const { tickets: incomingTickets, report } = await fetchIssuedTickets(key, data.events, selectedEventIds);
+      const incoming = incomingTickets.filter((ticket) =>
+        isTicketIncluded(ticket, data.includeEventNameContains, data.excludeEventNameContains)
+      );
       setData((current) => {
         const merged = mergeTickets(current.tickets, incoming);
         return {
@@ -168,7 +184,12 @@ export default function App() {
 
   const handleScan = useCallback((code: string) => {
     const current = dataRef.current;
-    const { tickets, result } = scanTicket(current.tickets, code);
+    const currentActiveTickets = current.tickets.filter((ticket) =>
+      isTicketIncluded(ticket, current.includeEventNameContains, current.excludeEventNameContains)
+    );
+    const { tickets: scannedActiveTickets, result } = scanTicket(currentActiveTickets, code);
+    const scannedById = new Map(scannedActiveTickets.map((ticket) => [ticket.id, ticket]));
+    const tickets = current.tickets.map((ticket) => scannedById.get(ticket.id) || ticket);
     const recentScans = result.status === "not_found" ? current.recentScans : [result.ticket, ...current.recentScans].slice(0, 10);
     setData({ ...current, tickets, recentScans });
     setScanResult(result);
@@ -187,6 +208,26 @@ export default function App() {
         message: `CSV import complete. ${merged.newTickets} new, ${merged.updatedTickets} updated.`,
         newTickets: merged.newTickets,
         updatedTickets: merged.updatedTickets,
+      },
+    });
+  }
+
+  function previewOldLocalData() {
+    const cleanupPreview = buildCleanupPreview(data.tickets, data.includeEventNameContains, data.excludeEventNameContains);
+    persist({ ...data, cleanupPreview });
+  }
+
+  function confirmCleanupPreview() {
+    const preview = data.cleanupPreview || [];
+    const removableIds = new Set(preview.flatMap((group) => group.ticketIds));
+    persist({
+      ...data,
+      tickets: data.tickets.filter((ticket) => !removableIds.has(ticket.id)),
+      cleanupPreview: [],
+      syncStatus: {
+        ...data.syncStatus,
+        state: "success",
+        message: `Removed ${removableIds.size} previewed old/out-of-range local records.`,
       },
     });
   }
@@ -276,8 +317,22 @@ export default function App() {
               use Vercel environment variables with the included API proxy.
             </p>
             <p className="note">
-              Event list is filtered to Ticket Tailor events from 15 days in the past through 15 days in the future. Older events are hidden.
+              Event list is filtered to Ticket Tailor events from 15 days in the past through 15 days in the future, including Liberty Fight League and excluding Roll With It by default.
             </p>
+            <label>
+              Include event name contains
+              <input
+                value={data.includeEventNameContains}
+                onChange={(event) => persist({ ...data, includeEventNameContains: event.target.value })}
+              />
+            </label>
+            <label>
+              Exclude event name contains
+              <input
+                value={data.excludeEventNameContains}
+                onChange={(event) => persist({ ...data, excludeEventNameContains: event.target.value })}
+              />
+            </label>
             {data.eventFilterSummary && (
               <div className="mini-report">
                 <strong>Event filter</strong>
@@ -285,8 +340,13 @@ export default function App() {
                   Showing events from {new Date(data.eventFilterSummary.fromDate).toLocaleDateString()} to{" "}
                   {new Date(data.eventFilterSummary.toDate).toLocaleDateString()}.
                 </span>
-                <span>{data.eventFilterSummary.eventsInDateRange} shown from {data.eventFilterSummary.totalEventsFound} total events found.</span>
+                <span>{data.eventFilterSummary.eventsInDateRange} shown from {data.eventFilterSummary.deduplicatedEventCount} deduplicated events.</span>
+                <span>{data.eventFilterSummary.rawEventsReturned} raw event rows returned from {data.eventFilterSummary.endpoint}.</span>
                 <span>{data.eventFilterSummary.hiddenOutsideDateRange} events outside the date window hidden.</span>
+                <span>{data.eventFilterSummary.excludedByName} events hidden by name filters.</span>
+                {data.eventFilterSummary.unexpectedlyHighEventCount && (
+                  <span>Unexpectedly high event count. Check API parsing/pagination. Sync Now is blocked.</span>
+                )}
               </div>
             )}
             <div className="button-row">
@@ -307,7 +367,15 @@ export default function App() {
             </label>
 
             <div className="button-row">
-              <button onClick={() => persist({ ...data, selectedEventIds: data.events.map((event) => event.id) })}>Select All Events</button>
+              <button
+                onClick={() =>
+                  data.eventFilterSummary?.unexpectedlyHighEventCount
+                    ? updateStatus("failed", "Unexpectedly high event count. Check API parsing/pagination before selecting all.")
+                    : persist({ ...data, selectedEventIds: data.events.map((event) => event.id) })
+                }
+              >
+                Select All Events
+              </button>
               <button onClick={() => persist({ ...data, selectedEventIds: [] })}>Clear Selection</button>
             </div>
 
@@ -319,6 +387,7 @@ export default function App() {
                 </label>
               ))}
             </div>
+            {data.eventFilterSummary && <EventDebugPanel summary={data.eventFilterSummary} />}
             {data.lastSyncReport && <SyncReportPanel report={data.lastSyncReport} />}
 
             <div className="section-title">
@@ -376,7 +445,12 @@ export default function App() {
         {view === "export" && (
           <section className="panel form-stack">
             <div className="warning-card">Export your checked-in list after the event so you have a backup record.</div>
-            <button className="primary" onClick={() => exportTickets(data.tickets)}>Export CSV</button>
+            <button className="primary" onClick={() => exportTickets(activeTickets, "liberty-current-ticket-scans")}>
+              Export Current Filtered CSV
+            </button>
+            <button onClick={() => exportTickets(data.tickets, "liberty-all-local-ticket-scans")}>Export All Local Data CSV</button>
+            <button onClick={previewOldLocalData}>Preview old/out-of-range local data</button>
+            {data.cleanupPreview && <CleanupPreview groups={data.cleanupPreview} onConfirm={confirmCleanupPreview} />}
             <button className="danger" onClick={clearLocalData}>Clear Local Data</button>
           </section>
         )}
@@ -404,12 +478,13 @@ function CameraScanner({ onScan }: { onScan: (code: string) => void }) {
   const lastScanRef = useRef<{ code: string; at: number }>({ code: "", at: 0 });
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState("");
+  const [cameraReady, setCameraReady] = useState(false);
   const [cameraMessage, setCameraMessage] = useState("Requesting rear camera...");
 
   useEffect(() => {
     let isMounted = true;
 
-    async function startScanner() {
+    async function loadCameras() {
       const { Html5Qrcode } = await import("html5-qrcode");
       if (!isMounted) return;
 
@@ -420,11 +495,35 @@ function CameraScanner({ onScan }: { onScan: (code: string) => void }) {
       setCameras(mapped);
 
       const rearCamera = mapped.find((camera) => /back|rear|environment|wide|world/i.test(camera.label));
-      const cameraId = selectedCameraId || rearCamera?.id || mapped[0]?.id || "";
-      if (cameraId) setSelectedCameraId(cameraId);
+      setSelectedCameraId(rearCamera?.id || mapped[0]?.id || "");
+      setCameraReady(true);
+    }
+
+    loadCameras().catch((error) => {
+      setCameraReady(true);
+      setCameraMessage(`Camera list unavailable. Trying rear camera. ${String(error)}`);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!cameraReady) return;
+    let isMounted = true;
+
+    async function startScanner() {
+      const { Html5Qrcode } = await import("html5-qrcode");
+      if (!isMounted) return;
+
+      await Promise.resolve(scannerRef.current?.clear()).catch(() => undefined);
+      scannerRef.current = null;
+      const container = document.getElementById("qr-reader");
+      if (container) container.innerHTML = "";
 
       const scanner = new Html5Qrcode("qr-reader");
-      const cameraConfig = cameraId ? { deviceId: { exact: cameraId } } : { facingMode: { ideal: "environment" } };
+      const cameraConfig = selectedCameraId ? { deviceId: { exact: selectedCameraId } } : { facingMode: { ideal: "environment" } };
 
       await scanner.start(
         cameraConfig,
@@ -442,7 +541,7 @@ function CameraScanner({ onScan }: { onScan: (code: string) => void }) {
         () => undefined
       );
       scannerRef.current = scanner;
-      setCameraMessage(cameraId ? "Camera ready. Rear camera is preferred when available." : "Camera ready.");
+      setCameraMessage(selectedCameraId ? "Camera ready. Rear camera is preferred when available." : "Camera ready.");
     }
 
     startScanner().catch((error) => {
@@ -453,7 +552,7 @@ function CameraScanner({ onScan }: { onScan: (code: string) => void }) {
       isMounted = false;
       Promise.resolve(scannerRef.current?.clear()).catch(() => undefined);
     };
-  }, [onScan, selectedCameraId]);
+  }, [cameraReady, onScan, selectedCameraId]);
 
   return (
     <div className="camera-stack">
@@ -467,7 +566,10 @@ function CameraScanner({ onScan }: { onScan: (code: string) => void }) {
           </select>
         )}
       </div>
-      <div id="qr-reader" className="qr-reader" />
+      <div className="scanner-frame">
+        <div id="qr-reader" className="qr-reader" />
+        <div className="scan-corners" aria-hidden="true" />
+      </div>
     </div>
   );
 }
@@ -489,6 +591,43 @@ function SyncReportPanel({ report }: { report: NonNullable<AppData["lastSyncRepo
         </span>
       ))}
       {report.errors.length > 0 && <span>Errors: {report.errors.join(" | ")}</span>}
+    </div>
+  );
+}
+
+function EventDebugPanel({ summary }: { summary: NonNullable<AppData["eventFilterSummary"]> }) {
+  return (
+    <div className="mini-report">
+      <strong>Event debug</strong>
+      <span>Endpoint used: {summary.endpoint}</span>
+      <span>Raw count returned: {summary.rawEventsReturned}</span>
+      <span>Deduplicated count: {summary.deduplicatedEventCount}</span>
+      <span>Included after filters: {summary.eventsInDateRange}</span>
+      <span>Excluded count: {summary.hiddenOutsideDateRange + summary.excludedByName}</span>
+      <span>Duplicate event IDs found: {summary.duplicateEventIdsFound ? "yes" : "no"}</span>
+      {summary.firstTenEvents.map((event) => (
+        <span key={event.id}>{event.id}: {event.name}</span>
+      ))}
+    </div>
+  );
+}
+
+function CleanupPreview({ groups, onConfirm }: { groups: NonNullable<AppData["cleanupPreview"]>; onConfirm: () => void }) {
+  const total = groups.reduce((sum, group) => sum + group.ticketCount, 0);
+  if (groups.length === 0) {
+    return <div className="mini-report"><strong>Cleanup preview</strong><span>No old/out-of-range local records found.</span></div>;
+  }
+
+  return (
+    <div className="mini-report">
+      <strong>Cleanup preview: {total} local records</strong>
+      {groups.map((group) => (
+        <span key={`${group.eventName}-${group.eventDate || "no-date"}`}>
+          {group.eventName} {group.eventDate ? `(${new Date(group.eventDate).toLocaleDateString()})` : "(no event date)"}:{" "}
+          {group.ticketCount} tickets, {group.included ? "included" : "excluded"} - {group.reasons.join(", ")}
+        </span>
+      ))}
+      <button className="danger" onClick={onConfirm}>Confirm remove only these previewed local records</button>
     </div>
   );
 }

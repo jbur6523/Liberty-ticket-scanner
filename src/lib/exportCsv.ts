@@ -1,12 +1,13 @@
 import Papa from "papaparse";
 import type { Ticket } from "../types";
 
-export function exportTickets(tickets: Ticket[]) {
+export function exportTickets(tickets: Ticket[], filenamePrefix = "liberty-ticket-scans") {
   const rows = tickets.map((ticket) => ({
     checked_in: ticket.checkedIn ? "yes" : "no",
     checked_in_at: ticket.checkedInAt || "",
     event_fighter_source: ticket.sourceName || ticket.fighter || ticket.eventName || "",
     event_name: ticket.eventName || "",
+    event_date: ticket.eventDate || "",
     fighter: ticket.fighter || "",
     ticket_code: ticket.ticketCode || "",
     ticket_number: ticket.ticketNumber || "",
@@ -24,7 +25,7 @@ export function exportTickets(tickets: Ticket[]) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `liberty-ticket-scans-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }

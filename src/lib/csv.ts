@@ -49,6 +49,7 @@ function csvRowToTicket(row: CsvRow, fallbackId: string): Ticket {
   const reference = pick(row, ["Reference"]);
   const orderReference = pick(row, ["Order Reference", "Order"]);
   const eventName = pick(row, ["Event", "Event Name"]);
+  const eventDate = pick(row, ["Event Date", "Start Date", "Event Start", "Starts At", "Date"]);
   const fighter = pick(row, ["Fighter"]);
   const sourceName = pick(row, ["Source"]) || fighter || eventName;
   const fields = { ...row, ticketCode, ticketNumber, barcode, reference, orderReference };
@@ -67,6 +68,7 @@ function csvRowToTicket(row: CsvRow, fallbackId: string): Ticket {
     lastName,
     email: pick(row, ["Email", "Email Address"]),
     eventName,
+    eventDate,
     fighter,
     sourceName,
     ticketType: pick(row, ["Ticket Type", "Type"]),

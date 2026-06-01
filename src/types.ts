@@ -14,6 +14,7 @@ export type Ticket = {
   email?: string;
   eventId?: string;
   eventName?: string;
+  eventDate?: string;
   fighter?: string;
   sourceName?: string;
   ticketType?: string;
@@ -34,11 +35,19 @@ export type EventOption = {
 };
 
 export type EventFilterSummary = {
+  endpoint: string;
+  rawEventsReturned: number;
   totalEventsFound: number;
+  deduplicatedEventCount: number;
   eventsInDateRange: number;
   hiddenOutsideDateRange: number;
+  excludedByName: number;
   fromDate: string;
   toDate: string;
+  firstTenEvents: { id: string; name: string }[];
+  duplicateEventIdsFound: boolean;
+  duplicateEventIds: string[];
+  unexpectedlyHighEventCount: boolean;
 };
 
 export type SyncEventReport = {
@@ -83,4 +92,16 @@ export type AppData = {
   apiKey?: string;
   eventFilterSummary?: EventFilterSummary;
   lastSyncReport?: SyncReport;
+  includeEventNameContains: string;
+  excludeEventNameContains: string;
+  cleanupPreview?: CleanupPreviewGroup[];
+};
+
+export type CleanupPreviewGroup = {
+  eventName: string;
+  eventDate?: string;
+  ticketCount: number;
+  included: boolean;
+  reasons: string[];
+  ticketIds: string[];
 };

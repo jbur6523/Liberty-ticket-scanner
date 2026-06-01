@@ -281,11 +281,62 @@ h1 {
   font-size: 1.1rem;
 }
 
-.qr-reader {
+.scanner-frame {
+  position: relative;
+  width: min(100%, 360px);
+  aspect-ratio: 1 / 1;
+  justify-self: center;
   overflow: hidden;
+  border: 2px solid rgba(212, 175, 55, 0.65);
   border-radius: 8px;
-  background: #fff;
-  color: #111;
+  background: #050505;
+}
+
+.qr-reader {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #050505;
+  color: #fff;
+}
+
+.qr-reader video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+}
+
+.qr-reader canvas {
+  display: none !important;
+}
+
+.qr-reader > div,
+.qr-reader__dashboard_section,
+.qr-reader__camera_selection {
+  width: 100% !important;
+}
+
+.scan-corners {
+  pointer-events: none;
+  position: absolute;
+  inset: 18px;
+  border: 0 solid transparent;
+}
+
+.scan-corners::before,
+.scan-corners::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(#fff, #fff) left top / 44px 4px no-repeat,
+    linear-gradient(#fff, #fff) left top / 4px 44px no-repeat,
+    linear-gradient(#fff, #fff) right top / 44px 4px no-repeat,
+    linear-gradient(#fff, #fff) right top / 4px 44px no-repeat,
+    linear-gradient(#fff, #fff) left bottom / 44px 4px no-repeat,
+    linear-gradient(#fff, #fff) left bottom / 4px 44px no-repeat,
+    linear-gradient(#fff, #fff) right bottom / 44px 4px no-repeat,
+    linear-gradient(#fff, #fff) right bottom / 4px 44px no-repeat;
 }
 
 .camera-stack {

@@ -1,4 +1,5 @@
 import type { AppData, AutoSyncInterval, EventOption, SyncStatus, Ticket } from "../types";
+import { DEFAULT_EXCLUDE_EVENT_NAME, DEFAULT_INCLUDE_EVENT_NAME } from "./eventFilters";
 
 const STORAGE_KEY = "liberty-ticket-scanner-v1";
 
@@ -16,13 +17,16 @@ export const defaultData: AppData = {
   recentScans: [],
   autoSyncMinutes: 0,
   syncStatus: defaultSyncStatus,
+  includeEventNameContains: DEFAULT_INCLUDE_EVENT_NAME,
+  excludeEventNameContains: DEFAULT_EXCLUDE_EVENT_NAME,
 };
 
 export function loadData(): AppData {
   const saved = window.localStorage.getItem(STORAGE_KEY);
   if (!saved) return defaultData;
   try {
-    return { ...defaultData, ...JSON.parse(saved) };
+    const parsed = JSON.parse(saved);
+    return { ...defaultData, ...parsed };
   } catch {
     return defaultData;
   }
