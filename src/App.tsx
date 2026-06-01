@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, type ErrorInfo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppData, AutoSyncInterval, EventOption, ScanResult, Ticket } from "./types";
 import { parseCsvFiles } from "./lib/csv";
 import { exportTickets } from "./lib/exportCsv";
@@ -18,6 +18,14 @@ const autoSyncOptions: { label: string; value: AutoSyncInterval }[] = [
 ];
 
 export default function App() {
+  return (
+    <AppErrorBoundary>
+      <TicketScannerApp />
+    </AppErrorBoundary>
+  );
+}
+
+function TicketScannerApp() {
   const [data, setData] = useState<AppData>(defaultData);
   const [view, setView] = useState<View>("dashboard");
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -27,6 +35,8 @@ export default function App() {
   const [ticketFilter, setTicketFilter] = useState<"all" | "checked" | "open">("all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [setupError, setSetupError] = useState("");
+  const [isHydrated, setIsHydrated] = useState(false);
   const dataRef = useRef(data);
 
   const activeTickets = useMemo(
@@ -35,15 +45,32 @@ export default function App() {
   );
 
   useEffect(() => {
-    const saved = loadData();
-    setData(saved);
-    setApiKeyInput(saved.apiKey || "");
+    try {
+      const saved = loadData();
+      setData(saved);
+      setApiKeyInput(saved.apiKey || "");
+    } catch (error) {
+      setSetupError(`Could not load saved setup data. Using safe defaults. ${String(error)}`);
+      setData(defaultData);
+      setApiKeyInput("");
+    } finally {
+      setIsHydrated(true);
+    }
   }, []);
 
   useEffect(() => {
-    saveData(data);
+    if (!isHydrated) return;
+    try {
+      saveData(data);
+    } catch (error) {
+      setSetupError(`Could not save setup data on this device. ${String(error)}`);
+    }
     dataRef.current = data;
-  }, [data]);
+  }, [data, isHydrated]);
+
+  useEffect(() => {
+    if (view !== "scan" && isScannerOpen) setIsScannerOpen(false);
+  }, [view, isScannerOpen]);
 
   useEffect(() => {
     if (!data.autoSyncMinutes || !data.apiKey || data.selectedEventIds.length === 0) return;
@@ -88,6 +115,11 @@ export default function App() {
   }, [activeTickets, ticketQuery, ticketFilter, sourceFilter]);
 
   const persist = (next: AppData) => setData(next);
+
+  function switchView(nextView: View) {
+    if (nextView !== "scan") setIsScannerOpen(false);
+    setView(nextView);
+  }
 
   async function loadEvents() {
     const key = apiKeyInput.trim();
@@ -264,7 +296,8 @@ export default function App() {
             type="button"
             className={view === item ? "active" : ""}
             aria-current={view === item ? "page" : undefined}
-            onClick={() => setView(item)}
+            onPointerUp={() => switchView(item)}
+            onClick={() => switchView(item)}
             key={item}
           >
             {item}
@@ -309,6 +342,7 @@ export default function App() {
 
         {view === "setup" && (
           <section className="panel form-stack setup-panel">
+            {setupError && <div className="warning-card">{setupError}</div>}
             <label>
               Ticket Tailor API Key
               <input
@@ -582,6 +616,9 @@ function CameraScanner({ onScan }: { onScan: (code: string) => void }) {
 }
 
 function SyncReportPanel({ report }: { report: NonNullable<AppData["lastSyncReport"]> }) {
+  const perEvent = Array.isArray(report.perEvent) ? report.perEvent : [];
+  const errors = Array.isArray(report.errors) ? report.errors : [];
+
   return (
     <details className="mini-report">
       <summary>Last sync details</summary>
@@ -592,17 +629,19 @@ function SyncReportPanel({ report }: { report: NonNullable<AppData["lastSyncRepo
       {report.selectedEvents > 0 && report.totalTicketsReturned === 0 && (
         <span>No tickets came back from the issued-ticket API. Import Ticket Tailor door-list CSVs as the backup source.</span>
       )}
-      {report.perEvent.map((event) => (
+      {perEvent.map((event) => (
         <span key={event.eventId}>
           {event.eventName}: {event.ticketsReturned} tickets, {event.callsMade} calls{event.error ? `, error: ${event.error}` : ""}
         </span>
       ))}
-      {report.errors.length > 0 && <span>Errors: {report.errors.join(" | ")}</span>}
+      {errors.length > 0 && <span>Errors: {errors.join(" | ")}</span>}
     </details>
   );
 }
 
 function EventDebugPanel({ summary }: { summary: NonNullable<AppData["eventFilterSummary"]> }) {
+  const firstTenEvents = Array.isArray(summary.firstTenEvents) ? summary.firstTenEvents : [];
+
   return (
     <details className="mini-report">
       <summary>Event debug</summary>
@@ -612,7 +651,7 @@ function EventDebugPanel({ summary }: { summary: NonNullable<AppData["eventFilte
       <span>Included after filters: {summary.eventsInDateRange}</span>
       <span>Excluded count: {summary.hiddenOutsideDateRange + summary.excludedByName}</span>
       <span>Duplicate event IDs found: {summary.duplicateEventIdsFound ? "yes" : "no"}</span>
-      {summary.firstTenEvents.map((event) => (
+      {firstTenEvents.map((event) => (
         <span key={event.id}>{event.id}: {event.name}</span>
       ))}
     </details>
@@ -620,15 +659,16 @@ function EventDebugPanel({ summary }: { summary: NonNullable<AppData["eventFilte
 }
 
 function CleanupPreview({ groups, onConfirm }: { groups: NonNullable<AppData["cleanupPreview"]>; onConfirm: () => void }) {
-  const total = groups.reduce((sum, group) => sum + group.ticketCount, 0);
-  if (groups.length === 0) {
+  const safeGroups = Array.isArray(groups) ? groups : [];
+  const total = safeGroups.reduce((sum, group) => sum + group.ticketCount, 0);
+  if (safeGroups.length === 0) {
     return <div className="mini-report"><strong>Cleanup preview</strong><span>No old/out-of-range local records found.</span></div>;
   }
 
   return (
     <div className="mini-report">
       <strong>Cleanup preview: {total} local records</strong>
-      {groups.map((group) => (
+      {safeGroups.map((group) => (
         <span key={`${group.eventName}-${group.eventDate || "no-date"}`}>
           {group.eventName} {group.eventDate ? `(${new Date(group.eventDate).toLocaleDateString()})` : "(no event date)"}:{" "}
           {group.ticketCount} tickets, {group.included ? "included" : "excluded"} - {group.reasons.join(", ")}
@@ -637,6 +677,46 @@ function CleanupPreview({ groups, onConfirm }: { groups: NonNullable<AppData["cl
       <button type="button" className="danger" onClick={onConfirm}>Confirm remove only these previewed local records</button>
     </div>
   );
+}
+
+type AppErrorBoundaryState = {
+  errorMessage: string;
+};
+
+class AppErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryState> {
+  state: AppErrorBoundaryState = { errorMessage: "" };
+
+  static getDerivedStateFromError(error: Error): AppErrorBoundaryState {
+    return { errorMessage: error.message || "The app hit a display error." };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("Liberty Ticket Scanner render error", error, info);
+  }
+
+  render() {
+    if (!this.state.errorMessage) return this.props.children;
+
+    return (
+      <div className="app-shell">
+        <section className="panel form-stack">
+          <h1>Setup could not load</h1>
+          <div className="warning-card">{this.state.errorMessage}</div>
+          <p className="note">This usually means old saved browser data is incompatible with the current app version.</p>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              window.localStorage.removeItem("liberty-ticket-scanner-v1");
+              window.location.reload();
+            }}
+          >
+            Reset local setup data and reload
+          </button>
+        </section>
+      </div>
+    );
+  }
 }
 
 function ScanResultPanel({ result }: { result: ScanResult }) {

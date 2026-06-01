@@ -1,4 +1,4 @@
-import type { AppData, AutoSyncInterval, EventOption, SyncStatus, Ticket } from "../types";
+import type { AppData, AutoSyncInterval, EventFilterSummary, EventOption, SyncReport, SyncStatus, Ticket } from "../types";
 import { DEFAULT_EXCLUDE_EVENT_NAME, DEFAULT_INCLUDE_EVENT_NAME } from "./eventFilters";
 
 const STORAGE_KEY = "liberty-ticket-scanner-v1";
@@ -26,7 +26,7 @@ export function loadData(): AppData {
   if (!saved) return defaultData;
   try {
     const parsed = JSON.parse(saved);
-    return { ...defaultData, ...parsed };
+    return normalizeData({ ...defaultData, ...parsed });
   } catch {
     return defaultData;
   }
@@ -75,4 +75,56 @@ export function setSyncStatus(data: AppData, syncStatus: SyncStatus): AppData {
 
 export function setEvents(data: AppData, events: EventOption[], selectedEventIds = data.selectedEventIds): AppData {
   return { ...data, events, selectedEventIds };
+}
+
+function normalizeData(data: AppData): AppData {
+  return {
+    ...defaultData,
+    ...data,
+    tickets: Array.isArray(data.tickets) ? data.tickets : [],
+    selectedEventIds: Array.isArray(data.selectedEventIds) ? data.selectedEventIds : [],
+    events: Array.isArray(data.events) ? data.events : [],
+    recentScans: Array.isArray(data.recentScans) ? data.recentScans : [],
+    autoSyncMinutes: data.autoSyncMinutes || 0,
+    syncStatus: {
+      ...defaultSyncStatus,
+      ...(data.syncStatus || {}),
+    },
+    includeEventNameContains: data.includeEventNameContains ?? DEFAULT_INCLUDE_EVENT_NAME,
+    excludeEventNameContains: data.excludeEventNameContains ?? DEFAULT_EXCLUDE_EVENT_NAME,
+    eventFilterSummary: data.eventFilterSummary ? normalizeEventFilterSummary(data.eventFilterSummary) : undefined,
+    lastSyncReport: data.lastSyncReport ? normalizeSyncReport(data.lastSyncReport) : undefined,
+    cleanupPreview: Array.isArray(data.cleanupPreview) ? data.cleanupPreview : undefined,
+  };
+}
+
+function normalizeEventFilterSummary(summary: AppData["eventFilterSummary"]): NonNullable<AppData["eventFilterSummary"]> {
+  const safeSummary: Partial<EventFilterSummary> = summary || {};
+  return {
+    endpoint: safeSummary.endpoint || "/v1/events",
+    rawEventsReturned: safeSummary.rawEventsReturned || 0,
+    totalEventsFound: safeSummary.totalEventsFound || 0,
+    deduplicatedEventCount: safeSummary.deduplicatedEventCount || 0,
+    eventsInDateRange: safeSummary.eventsInDateRange || 0,
+    hiddenOutsideDateRange: safeSummary.hiddenOutsideDateRange || 0,
+    excludedByName: safeSummary.excludedByName || 0,
+    fromDate: safeSummary.fromDate || new Date().toISOString(),
+    toDate: safeSummary.toDate || new Date().toISOString(),
+    firstTenEvents: Array.isArray(safeSummary.firstTenEvents) ? safeSummary.firstTenEvents : [],
+    duplicateEventIdsFound: Boolean(safeSummary.duplicateEventIdsFound),
+    duplicateEventIds: Array.isArray(safeSummary.duplicateEventIds) ? safeSummary.duplicateEventIds : [],
+    unexpectedlyHighEventCount: Boolean(safeSummary.unexpectedlyHighEventCount),
+  };
+}
+
+function normalizeSyncReport(report: AppData["lastSyncReport"]): NonNullable<AppData["lastSyncReport"]> {
+  const safeReport: Partial<SyncReport> = report || {};
+  return {
+    eventsFound: safeReport.eventsFound || 0,
+    selectedEvents: safeReport.selectedEvents || 0,
+    ticketApiCallsMade: safeReport.ticketApiCallsMade || 0,
+    totalTicketsReturned: safeReport.totalTicketsReturned || 0,
+    perEvent: Array.isArray(safeReport.perEvent) ? safeReport.perEvent : [],
+    errors: Array.isArray(safeReport.errors) ? safeReport.errors : [],
+  };
 }
