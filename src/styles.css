@@ -23,6 +23,7 @@ button,
 input,
 select {
   font: inherit;
+  font-size: 16px;
 }
 
 button {
@@ -33,6 +34,7 @@ button {
   min-height: 46px;
   padding: 0.7rem 1rem;
   font-weight: 800;
+  touch-action: manipulation;
 }
 
 button.primary {
@@ -99,8 +101,7 @@ h1 {
 }
 
 .tabs {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  display: flex;
   gap: 0.4rem;
   position: sticky;
   top: 0;
@@ -108,12 +109,21 @@ h1 {
   padding: 0.45rem 0;
   background: rgba(5, 5, 5, 0.92);
   backdrop-filter: blur(12px);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tabs button {
-  min-height: 40px;
-  padding: 0.45rem 0.25rem;
-  font-size: 0.78rem;
+  flex: 0 0 auto;
+  min-width: 88px;
+  min-height: 46px;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.9rem;
   text-transform: capitalize;
 }
 
@@ -154,6 +164,10 @@ h1 {
 .form-stack {
   display: grid;
   gap: 1rem;
+}
+
+.setup-panel {
+  overflow: hidden;
 }
 
 .stats-grid {
@@ -229,7 +243,7 @@ h1 {
 .filter-row,
 .manual-form {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 0.6rem;
 }
 
@@ -249,6 +263,17 @@ h1 {
   background: rgba(212, 175, 55, 0.08);
   padding: 0.85rem;
   color: #f8efd1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mini-report summary {
+  cursor: pointer;
+  color: #f8efd1;
+  font-weight: 900;
+  min-height: 40px;
+  display: grid;
+  align-items: center;
 }
 
 .mini-report span,
@@ -264,11 +289,17 @@ h1 {
   border-radius: 8px;
   padding: 0.75rem;
   color: #fff;
+  min-width: 0;
 }
 
 .check-row input {
   width: 22px;
   min-height: 22px;
+}
+
+.check-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .scanner-panel {
@@ -385,6 +416,12 @@ h1 {
 
   .tabs button {
     font-size: 0.95rem;
+  }
+
+  .button-row,
+  .filter-row,
+  .manual-form {
+    grid-template-columns: 1fr 1fr;
   }
 
   .stats-grid {

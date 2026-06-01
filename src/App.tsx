@@ -258,9 +258,15 @@ export default function App() {
         <p>One master scanner for every fighter, event page, and door-list source.</p>
       </header>
 
-      <nav className="tabs">
+      <nav className="tabs" aria-label="Main sections">
         {(["dashboard", "setup", "scan", "tickets", "export"] as View[]).map((item) => (
-          <button className={view === item ? "active" : ""} onClick={() => setView(item)} key={item}>
+          <button
+            type="button"
+            className={view === item ? "active" : ""}
+            aria-current={view === item ? "page" : undefined}
+            onClick={() => setView(item)}
+            key={item}
+          >
             {item}
           </button>
         ))}
@@ -302,7 +308,7 @@ export default function App() {
         )}
 
         {view === "setup" && (
-          <section className="panel form-stack">
+          <section className="panel form-stack setup-panel">
             <label>
               Ticket Tailor API Key
               <input
@@ -350,8 +356,8 @@ export default function App() {
               </div>
             )}
             <div className="button-row">
-              <button className="primary" onClick={loadEvents}>Load Events</button>
-              <button onClick={() => syncTickets()}>Sync Now</button>
+              <button type="button" className="primary" onClick={loadEvents}>Load Events</button>
+              <button type="button" onClick={() => syncTickets()}>Sync Now</button>
             </div>
 
             <label>
@@ -368,6 +374,7 @@ export default function App() {
 
             <div className="button-row">
               <button
+                type="button"
                 onClick={() =>
                   data.eventFilterSummary?.unexpectedlyHighEventCount
                     ? updateStatus("failed", "Unexpectedly high event count. Check API parsing/pagination before selecting all.")
@@ -376,7 +383,7 @@ export default function App() {
               >
                 Select All Events
               </button>
-              <button onClick={() => persist({ ...data, selectedEventIds: [] })}>Clear Selection</button>
+              <button type="button" onClick={() => persist({ ...data, selectedEventIds: [] })}>Clear Selection</button>
             </div>
 
             <div className="event-list">
@@ -399,7 +406,7 @@ export default function App() {
 
         {view === "scan" && (
           <section className="panel scanner-panel">
-            <button className="primary scan-toggle" onClick={() => setIsScannerOpen((open) => !open)}>
+            <button type="button" className="primary scan-toggle" onClick={() => setIsScannerOpen((open) => !open)}>
               {isScannerOpen ? "Stop Camera" : "Start Camera Scan"}
             </button>
             {isScannerOpen && <CameraScanner onScan={handleScan} />}
@@ -445,13 +452,13 @@ export default function App() {
         {view === "export" && (
           <section className="panel form-stack">
             <div className="warning-card">Export your checked-in list after the event so you have a backup record.</div>
-            <button className="primary" onClick={() => exportTickets(activeTickets, "liberty-current-ticket-scans")}>
+            <button type="button" className="primary" onClick={() => exportTickets(activeTickets, "liberty-current-ticket-scans")}>
               Export Current Filtered CSV
             </button>
-            <button onClick={() => exportTickets(data.tickets, "liberty-all-local-ticket-scans")}>Export All Local Data CSV</button>
-            <button onClick={previewOldLocalData}>Preview old/out-of-range local data</button>
+            <button type="button" onClick={() => exportTickets(data.tickets, "liberty-all-local-ticket-scans")}>Export All Local Data CSV</button>
+            <button type="button" onClick={previewOldLocalData}>Preview old/out-of-range local data</button>
             {data.cleanupPreview && <CleanupPreview groups={data.cleanupPreview} onConfirm={confirmCleanupPreview} />}
-            <button className="danger" onClick={clearLocalData}>Clear Local Data</button>
+            <button type="button" className="danger" onClick={clearLocalData}>Clear Local Data</button>
           </section>
         )}
       </main>
@@ -576,8 +583,8 @@ function CameraScanner({ onScan }: { onScan: (code: string) => void }) {
 
 function SyncReportPanel({ report }: { report: NonNullable<AppData["lastSyncReport"]> }) {
   return (
-    <div className="mini-report">
-      <strong>Last sync details</strong>
+    <details className="mini-report">
+      <summary>Last sync details</summary>
       <span>Events found: {report.eventsFound}</span>
       <span>Selected events: {report.selectedEvents}</span>
       <span>Ticket API calls made: {report.ticketApiCallsMade}</span>
@@ -591,14 +598,14 @@ function SyncReportPanel({ report }: { report: NonNullable<AppData["lastSyncRepo
         </span>
       ))}
       {report.errors.length > 0 && <span>Errors: {report.errors.join(" | ")}</span>}
-    </div>
+    </details>
   );
 }
 
 function EventDebugPanel({ summary }: { summary: NonNullable<AppData["eventFilterSummary"]> }) {
   return (
-    <div className="mini-report">
-      <strong>Event debug</strong>
+    <details className="mini-report">
+      <summary>Event debug</summary>
       <span>Endpoint used: {summary.endpoint}</span>
       <span>Raw count returned: {summary.rawEventsReturned}</span>
       <span>Deduplicated count: {summary.deduplicatedEventCount}</span>
@@ -608,7 +615,7 @@ function EventDebugPanel({ summary }: { summary: NonNullable<AppData["eventFilte
       {summary.firstTenEvents.map((event) => (
         <span key={event.id}>{event.id}: {event.name}</span>
       ))}
-    </div>
+    </details>
   );
 }
 
@@ -627,7 +634,7 @@ function CleanupPreview({ groups, onConfirm }: { groups: NonNullable<AppData["cl
           {group.ticketCount} tickets, {group.included ? "included" : "excluded"} - {group.reasons.join(", ")}
         </span>
       ))}
-      <button className="danger" onClick={onConfirm}>Confirm remove only these previewed local records</button>
+      <button type="button" className="danger" onClick={onConfirm}>Confirm remove only these previewed local records</button>
     </div>
   );
 }
@@ -672,7 +679,7 @@ function TicketCards({ tickets, compact = false, onMark }: { tickets: Ticket[]; 
           </div>
           <div className={ticket.checkedIn ? "pill checked" : "pill"}>{ticket.checkedIn ? "In" : "Open"}</div>
           {onMark && (
-            <button onClick={() => onMark(ticket, !ticket.checkedIn)}>{ticket.checkedIn ? "Undo" : "Check In"}</button>
+            <button type="button" onClick={() => onMark(ticket, !ticket.checkedIn)}>{ticket.checkedIn ? "Undo" : "Check In"}</button>
           )}
         </article>
       ))}
