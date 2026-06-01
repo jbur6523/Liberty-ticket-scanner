@@ -68,7 +68,7 @@ export async function fetchEvents(
       firstTenEvents: dedupedEvents.slice(0, 10).map((event) => ({ id: event.id, name: event.name })),
       duplicateEventIdsFound: duplicateIds.size > 0,
       duplicateEventIds: [...duplicateIds],
-      unexpectedlyHighEventCount: dedupedEvents.length > 100,
+      unexpectedlyHighEventCount: dedupedEvents.length > 200,
     },
   };
 }

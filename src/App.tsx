@@ -136,7 +136,7 @@ function TicketScannerApp() {
         syncStatus: {
           state: summary.unexpectedlyHighEventCount ? "failed" : "success",
           message: summary.unexpectedlyHighEventCount
-            ? "Unexpectedly high event count. Check API parsing/pagination. Sync is blocked."
+            ? "Unexpectedly high event count over 200. Check API parsing/pagination. Sync is blocked."
             : `Loaded ${events.length} Liberty Fight League events in the 15-day event window. ${summary.hiddenOutsideDateRange} date-excluded and ${summary.excludedByName} name-excluded events hidden.`,
           newTickets: 0,
           updatedTickets: 0,
@@ -150,7 +150,7 @@ function TicketScannerApp() {
   async function syncTickets(key = data.apiKey || apiKeyInput.trim()) {
     if (!key) return updateStatus("failed", "Enter your Ticket Tailor API key first.");
     if (data.eventFilterSummary?.unexpectedlyHighEventCount) {
-      return updateStatus("failed", "Unexpectedly high event count. Check API parsing/pagination before syncing.");
+      return updateStatus("failed", "Unexpectedly high event count over 200. Check API parsing/pagination before syncing.");
     }
     if (data.selectedEventIds.length === 0) return updateStatus("failed", "Select at least one event before syncing.");
     setData((current) => ({
@@ -385,7 +385,7 @@ function TicketScannerApp() {
                 <span>{data.eventFilterSummary.hiddenOutsideDateRange} events outside the date window hidden.</span>
                 <span>{data.eventFilterSummary.excludedByName} events hidden by name filters.</span>
                 {data.eventFilterSummary.unexpectedlyHighEventCount && (
-                  <span>Unexpectedly high event count. Check API parsing/pagination. Sync Now is blocked.</span>
+                  <span>Unexpectedly high event count over 200. Check API parsing/pagination. Sync Now is blocked.</span>
                 )}
               </div>
             )}
@@ -411,7 +411,7 @@ function TicketScannerApp() {
                 type="button"
                 onClick={() =>
                   data.eventFilterSummary?.unexpectedlyHighEventCount
-                    ? updateStatus("failed", "Unexpectedly high event count. Check API parsing/pagination before selecting all.")
+                    ? updateStatus("failed", "Unexpectedly high event count over 200. Check API parsing/pagination before selecting all.")
                     : persist({ ...data, selectedEventIds: data.events.map((event) => event.id) })
                 }
               >
